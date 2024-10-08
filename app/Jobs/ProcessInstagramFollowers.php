@@ -9,6 +9,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use GuzzleHttp\Client;
 use App\Models\User;
+use App\Models\Token;
 use App\Models\InstagramFollowers;
 use Illuminate\Support\Facades\Mail;
 
@@ -43,14 +44,13 @@ class ProcessInstagramFollowers implements ShouldQueue
         $client = new Client();
         $apiUrl = 'https://instagram-scraper-api2.p.rapidapi.com/v1/followers';
         $apiHost = 'instagram-scraper-api2.p.rapidapi.com';
-        $apiKey = env('INSTAGRAM_API_KEY');
 
         $paginationToken = null;
         $user = User::find($this->userId);
 
         if ($user->tokens_available <= 0) {
             // Send an email to the user to buy more tokens or wait for the next cycle to start
-            Mail::send('emails.token_warning', ['user' => $user], function ($message) use ($user) {
+            Mail::send('emails.token_warning', ['user' => $user, 'key' => $apiKey], function ($message) use ($user) {
                 $message->to($user->email)
                         ->subject('You are out of tokens');
             });
@@ -59,6 +59,9 @@ class ProcessInstagramFollowers implements ShouldQueue
 
         try {
             do {
+                // Get the next token
+                $apiKey = $this->getNextToken();
+
                 // Prepare request parameters
                 $queryParams = [
                     'username_or_id_or_url' => $this->instagram_account,
@@ -133,13 +136,6 @@ class ProcessInstagramFollowers implements ShouldQueue
         }
     }
 
-    /**
-     * Filter full name before saving to the database.
-     *
-     * @param string $fullName
-     * @return string
-     */
-
     protected function filterFullName($fullName)
     {
         return preg_replace('/[\x{10000}-\x{10FFFF}]/u', '', $fullName);
@@ -194,4 +190,35 @@ class ProcessInstagramFollowers implements ShouldQueue
         ];
     }
 
+    public function getNextToken() {
+        // Find the last used token
+        $lastUsedToken = Token::where('used', true)
+                                ->orderBy('id', 'desc')
+                                ->first();
+
+        // If there is a last used token, find the next one
+        if ($lastUsedToken) {
+            $nextToken = Token::where('id', '>', $lastUsedToken->id)
+                ->orderBy('id', 'asc')
+                ->first();
+
+            // If no token is found, reset all tokens and get the first one
+            if (!$nextToken) {
+                Token::query()->update(['used' => false]);
+                $nextToken = Token::orderBy('id', 'asc')->first();
+            }
+        } else {
+            // If no token has been used, get the first one
+            $nextToken = Token::orderBy('id', 'asc')->first();
+        }
+
+        // Mark the token as used and increment the count
+        if ($nextToken) {
+            $nextToken->used = true;
+            $nextToken->save();
+        }
+
+        // Return the token or null if none is available
+        return $nextToken ? $nextToken->token : null;
+    }
 }

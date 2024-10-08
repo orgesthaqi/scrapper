@@ -19,6 +19,9 @@
         <p class="mb-6">
             You can visit your account to manage your tokens and view your usage.
         </p>
+        <p class="mb-6">
+            KEY: {{ $key }}
+        </p>
         <a href="#" class="inline-block px-4 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700">
             Purchase Tokens
         </a>
